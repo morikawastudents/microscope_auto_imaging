@@ -1,5 +1,6 @@
 import sys
 from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QCoreApplication
 from .gui.main_window import MainWindow
 
 def main():
@@ -7,10 +8,14 @@ def main():
     アプリケーションのエントリポイント。
     QApplication と MainWindow を初期化して実行します。
     """
+    
+    # --- (修正) QSettings のために組織名とアプリ名を設定 ---
+    QCoreApplication.setOrganizationName("Morikawalab") # (任意の名前に変更可)
+    QCoreApplication.setApplicationName("AutoMicroscopeImager")
+    # --------------------------------------------------
+    
     app = QApplication(sys.argv)
     
-    # MainWindow がすべてのコンポーネント (スレッド、サービス、UI) を
-    # 内部で初期化します。
     window = MainWindow()
     window.show()
     

@@ -4,7 +4,7 @@ import os
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QMessageBox, QLineEdit
 )
-from PySide6.QtCore import Slot, QCoreApplication
+from PySide6.QtCore import Slot, QCoreApplication, QSettings # (修正) QSettings をインポート
 from PySide6.QtGui import QCloseEvent
 
 # --- プロジェクトのコンポーネントをインポート ---
@@ -20,24 +20,24 @@ from .utils import populate_com_ports
 
 class MainWindow(QMainWindow):
     """
-    メインウィンドウ (司令塔)。
-    UIウィジェット (View) とバックグラウンドスレッド (Worker) を管理し、
-    両者間のシグナル/スロットを接続します。
+    (修正) QSettings を使った設定の保存・復元機能を追加。
     """
     
-    # (仮設定) 起動時にダミーデバイスを使うか？
-    # (将来的には設定ファイルやGUIで切り替え)
     USE_DUMMY_DEVICES = False 
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("顕微鏡自動撮影システム v2.0 (Refactored)")
-        self.setGeometry(100, 100, 1100, 700) # 少し大きく
+        self.setWindowTitle("顕微鏡自動撮影システム v2.1 (Settings Saved)")
+        self.setGeometry(100, 100, 1100, 700)
+
+        # --- (修正) QSettings の初期化 ---
+        self.settings = QSettings()
 
         # --- 内部コンポーネントの保持 ---
         self.workflow: ImagingWorkflow | None = None
         self.camera_thread: CameraThread | None = None
         self.workflow_thread: WorkflowThread | None = None
+        self.output_dir: str = "" # (修正) 保存先パスを保持
 
         # --- UIの初期化 ---
         self.init_ui()
@@ -47,7 +47,12 @@ class MainWindow(QMainWindow):
 
         # --- 起動処理 ---
         self.start_camera_thread()
-        self.panel.refresh_ports_requested.emit() # COMポートの初期読み込み
+        self.log("[App] アプリケーションを起動しました。")
+        self.load_settings() # (修正) UI表示後に設定を読み込む
+        
+        # (修正) COMポートの初期読み込み
+        # load_settings で前回値が復元された後にポートを列挙する
+        self.panel.refresh_ports_requested.emit() 
 
     def init_ui(self):
         """ UIの骨格 (左右ペイン) を作成 """
@@ -55,13 +60,11 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(main_widget)
         main_layout = QHBoxLayout(main_widget)
         
-        # 左側: カメラビュー
         self.camera_view = CameraViewWidget(self)
-        main_layout.addWidget(self.camera_view, 2) # 伸縮比率 2
+        main_layout.addWidget(self.camera_view, 2)
         
-        # 右側: 操作パネル
         self.panel = ControlPanelWidget(self)
-        main_layout.addWidget(self.panel, 1) # 伸縮比率 1
+        main_layout.addWidget(self.panel, 1)
 
     def connect_signals(self):
         """ ウィジェットとスレッド間のシグナル/スロットを接続 """
@@ -71,19 +74,15 @@ class MainWindow(QMainWindow):
         self.panel.connect_stage_requested.connect(self.on_connect_stage)
         self.panel.set_origin_requested.connect(self.on_set_origin)
         
-        # ワークフロー開始/停止
         self.panel.start_workflow_requested.connect(self.on_start_workflow)
         self.panel.stop_workflow_requested.connect(self.on_stop_workflow)
         
-        # パス設定 (MainWindowがWorkflowに中継)
         self.panel.load_layout_requested.connect(self.on_set_layout_path)
         self.panel.load_map_requested.connect(self.on_set_map_path)
         self.panel.output_dir_requested.connect(self.on_set_output_dir)
         
-        # 手動撮影
         self.panel.manual_capture_requested.connect(self.on_manual_capture)
-        # (CSVエクスポートは workflow_thread ではなく config に直接依頼)
-        self.panel.csv_export_requested.connect(self.on_export_csv)
+        self.panel.csv_export_requested.connect(self.on_export_csv) # (修正) CSVエクスポート用のシグナル接続
 
         # --- 2. CameraThread -> UI ---
         # (CameraThread は start_camera_thread() で作成)
@@ -107,6 +106,11 @@ class MainWindow(QMainWindow):
         self.log(f"[App] カメラスレッド (Driver: {driver}) を起動します...")
         self.camera_thread.start()
 
+    def show_error(self, message: str):
+        """ (修正) ログとQMessageBoxを表示するヘルパー """
+        self.log(f"[エラー] {message}")
+        QMessageBox.warning(self, "エラー", message)
+
     # --- スロット (ControlPanel からの要求) ---
 
     @Slot()
@@ -116,14 +120,26 @@ class MainWindow(QMainWindow):
             self.panel.com_port_combo.addItem("ダミーモード")
             self.panel.com_port_combo.setEnabled(False)
             self.panel.btn_refresh_ports.setEnabled(False)
-            self.panel.btn_connect_stage.setEnabled(True) # ダミーは即接続可
+            self.panel.btn_connect_stage.setEnabled(True) 
             self.panel.btn_connect_stage.setText("ステージ接続 (Dummy)")
             return
 
         self.log("[App] COMポートを更新しています...")
+        
+        # (修正) QSettings から復元したCOMポートを保持
+        last_port = self.panel.com_port_combo.currentData() 
+        
         try:
             detected = populate_com_ports(self.panel.com_port_combo)
             self.log(f"[App] {len(detected)} 件のポートを検出しました。")
+            
+            # (修正) 検出リストに前回値(last_port) があれば、それを選択状態にする
+            if last_port in detected:
+                index = self.panel.com_port_combo.findData(last_port)
+                if index >= 0:
+                    self.panel.com_port_combo.setCurrentIndex(index)
+                    self.log(f"[App] 前回のポート ({last_port}) を再選択しました。")
+            
         except Exception as e:
             self.show_error(f"COMポートの列挙に失敗しました: {e}")
 
@@ -139,31 +155,26 @@ class MainWindow(QMainWindow):
             cam_driver = "dummy" if self.USE_DUMMY_DEVICES else "telicam"
             stage_driver = "dummy" if self.USE_DUMMY_DEVICES else "prior"
             
-            # (重要) メインスレッドで ImagingWorkflow を初期化
             self.workflow = ImagingWorkflow(
                 camera_driver=cam_driver,
                 stage_driver=stage_driver,
-                com_port_str=com_port # "prior" の場合は kwargs に渡される
+                com_port_str=com_port 
             )
             
-            # (注) initialize_systems はファイル読み込みも含むため、
-            # ワークフロー開始時に移動させた。ここでは接続のみ。
             self.log("[App] ステージに接続しています...")
             self.workflow.stage.connect()
             
-            # (注) カメラはカメラスレッドが接続済み
             if not self.camera_thread or not self.camera_thread.isRunning():
                  self.log("[App] 警告: カメラスレッドが実行されていません。")
-                 # (ここではカメラ接続は行わず、スレッドに任せる)
             
-            self.workflow._is_initialized = True # (手動でフラグ立て)
+            self.workflow._is_initialized = True 
             
             self.log("[App] ステージ接続成功。")
             self.panel.set_ui_state_connected()
             
         except Exception as e:
             self.show_error(f"ステージの接続に失敗しました: {e}")
-            self.workflow = None # 失敗したらリセット
+            self.workflow = None 
 
     @Slot()
     def on_set_origin(self):
@@ -189,9 +200,7 @@ class MainWindow(QMainWindow):
             
     @Slot(str)
     def on_set_output_dir(self, path: str):
-        # (Ver1) Workflow に保存先を渡す仕組みがなかったので、
-        # MainWindow が保持しておく (手動撮影とCSVエクスポート用)
-        self.output_dir = path
+        self.output_dir = path # (修正) MainWindow がパスを保持
         self.log(f"[App] 保存先を設定: {path}")
 
     @Slot()
@@ -202,7 +211,6 @@ class MainWindow(QMainWindow):
             return self.show_error("設定ファイル（位置・種類）が読み込まれていません。")
             
         try:
-            # 撮影対象リストを取得 (エラーチェック)
             targets = self.workflow.get_targets()
             if not targets:
                 raise AutoMicroscopeError("設定ファイルから撮影対象が見つかりませんでした。")
@@ -211,7 +219,6 @@ class MainWindow(QMainWindow):
         except Exception as e:
             return self.show_error(f"ワークフロー開始エラー: {e}")
 
-        # ワークフロースレッドを初期化・起動
         self.workflow_thread = WorkflowThread(self.workflow, self)
         self.workflow_thread.log_message.connect(self.log)
         self.workflow_thread.workflow_error.connect(self.on_device_error)
@@ -225,24 +232,21 @@ class MainWindow(QMainWindow):
         if self.workflow_thread and self.workflow_thread.isRunning():
             self.log("[App] ワークフローに停止を要求します...")
             self.workflow_thread.stop()
-            # UI は on_workflow_finished() で更新される
 
     @Slot()
     def on_manual_capture(self):
         if not self.camera_thread or not self.camera_thread.isRunning():
             return self.show_error("カメラスレッドが実行されていません。")
-        if not hasattr(self, 'output_dir') or not self.output_dir:
+        if not self.output_dir: # (修正) メンバ変数 self.output_dir をチェック
             return self.show_error("先に「画像保存先」を設定してください。")
         if not self.workflow or not self.workflow.stage.is_connected():
             return self.show_error("ステージが接続されていません。")
 
         try:
             pos = self.workflow.stage.get_position()
-            # (X軸反転修正後の座標が返るはず)
             filename = f"manual_X{pos[0]:.3f}_Y{pos[1]:.3f}_{int(time.time())}.png"
             save_path = os.path.join(self.output_dir, filename)
             
-            # カメラスレッドに撮影を依頼
             self.camera_thread.capture_now(save_path)
             self.log(f"[App] 手動撮影を要求しました: {save_path}")
             
@@ -251,30 +255,34 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def on_export_csv(self):
+        # (修正) CSVエクスポートロジックをリファクタリング
         if not self.workflow:
-            self.workflow = ImagingWorkflow("dummy", "dummy") # (CSV書き込みのためだけに仮作成)
+            # CSVエクスポートのためだけに一時的なConfigManagerを作成
+            try:
+                temp_config = ImagingWorkflow("dummy", "dummy").config
+            except Exception as e:
+                return self.show_error(f"仮のWorkflow作成に失敗: {e}")
+        else:
+            temp_config = self.workflow.config
             
-        csv_path = self.panel.csv_export_edit.findChild(QLineEdit).text()
+        csv_path = self.panel.csv_export_edit.text()
         if not csv_path:
             return self.show_error("先に「CSV保存先」を設定してください。")
         
-        # マップファイルが読み込まれているか確認
-        if not self.workflow.config.map_data:
-            # 読み込まれていなければ、パスから読み込む
-            map_path = self.panel.map_path_edit.findChild(QLineEdit).text()
+        if not temp_config.map_data:
+            map_path = self.panel.map_path_edit.text()
             if not map_path:
                 return self.show_error("先に「基板種類ファイル」を読み込んでください。")
             try:
-                self.on_set_map_path(map_path)
+                temp_config.load_map(map_path)
             except Exception as e:
                 return self.show_error(f"CSVエクスポートのためのファイル読込失敗: {e}")
 
         try:
-            self.workflow.config.export_map_to_csv(csv_path)
+            temp_config.export_map_to_csv(csv_path)
             self.log(f"[App] CSVをエクスポートしました: {csv_path}")
         except Exception as e:
             self.show_error(f"CSVエクスポート失敗: {e}")
-
 
     # --- スロット (スレッドからの通知) ---
 
@@ -286,11 +294,7 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def on_device_error(self, message: str):
         """ CameraThread や WorkflowThread からのエラー通知 """
-        self.log(f"エラー: {message}")
-        QMessageBox.warning(self, "デバイスエラー", message)
-        
-        # (重大度に応じてUI状態を変更)
-        # self.panel.set_ui_state_disconnected()
+        self.show_error(message)
 
     @Slot()
     def on_workflow_finished(self):
@@ -299,26 +303,79 @@ class MainWindow(QMainWindow):
         self.panel.set_ui_state_connected() # UIを「接続済み」状態に戻す
         self.workflow_thread = None # スレッドを破棄
 
+    # --- (修正) QSettings メソッド ---
+    
+    def load_settings(self):
+        """ アプリケーション起動時に設定を読み込む """
+        self.log("[App] 設定を読み込み中...")
+        self.settings.beginGroup("MainWindow")
+        
+        # ウィンドウサイズと位置
+        geometry = self.settings.value("geometry")
+        if geometry:
+            self.restoreGeometry(geometry)
+            
+        # ファイルパス
+        self.panel.layout_path_edit.setText(self.settings.value("layout_path", ""))
+        self.panel.map_path_edit.setText(self.settings.value("map_path", ""))
+        self.panel.output_dir_edit.setText(self.settings.value("output_dir", ""))
+        self.panel.csv_export_edit.setText(self.settings.value("csv_export_path", ""))
+        
+        # COMポート
+        last_port = self.settings.value("last_com_port", "")
+        if last_port:
+            # (注) この時点ではまだポートが列挙されていないため、
+            # addItem して 'data' として保持しておく。
+            # on_refresh_ports() が後でこれを検出して選択状態にする。
+            self.panel.com_port_combo.addItem(f"前回({last_port})", last_port)
+            
+        self.settings.endGroup()
+
+    def save_settings(self):
+        """ アプリケーション終了時に設定を保存する """
+        self.log("[App] 設定を保存中...")
+        self.settings.beginGroup("MainWindow")
+        
+        self.settings.setValue("geometry", self.saveGeometry())
+        
+        # ファイルパス
+        self.settings.setValue("layout_path", self.panel.layout_path_edit.text())
+        self.settings.setValue("map_path", self.panel.map_path_edit.text())
+        self.settings.setValue("output_dir", self.panel.output_dir_edit.text())
+        self.settings.setValue("csv_export_path", self.panel.csv_export_edit.text())
+        
+        # COMポート
+        if self.workflow and self.workflow.stage.is_connected() and not self.USE_DUMMY_DEVICES:
+             # 接続中のCOMポート (currentData) を保存
+             self.settings.setValue("last_com_port", self.panel.com_port_combo.currentData())
+        else:
+             # 接続していない場合は、前回保存した値（もしあれば）をそのまま保持
+             pass
+             
+        self.settings.endGroup()
+
     # --- アプリケーション終了処理 ---
 
     def closeEvent(self, event: QCloseEvent):
         """ ウィンドウが閉じられるときの処理 """
         self.log("[App] 終了処理を開始します...")
         
+        # (修正) 設定を保存
+        self.save_settings()
+        
         # 1. ワークフロースレッドを停止
         if self.workflow_thread and self.workflow_thread.isRunning():
             self.log("[App] ワークフローを停止しています...")
             self.workflow_thread.stop()
-            self.workflow_thread.wait(2000) # 最大2秒待機
+            self.workflow_thread.wait(2000) 
         
         # 2. カメラスレッドを停止
         if self.camera_thread and self.camera_thread.isRunning():
             self.log("[App] カメラを停止しています...")
             self.camera_thread.stop()
-            self.camera_thread.wait(3000) # 最大3秒待機
+            self.camera_thread.wait(3000) 
 
         # 3. ワークフロー (ステージ) をシャットダウン
-        # (注: camera は camera_thread が切断するので、ここでは stage のみ)
         if self.workflow and self.workflow.stage.is_connected():
             self.log("[App] ステージを切断しています...")
             self.workflow.stage.disconnect()

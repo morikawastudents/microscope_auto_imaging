@@ -1,3 +1,4 @@
+from typing import Tuple
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QLineEdit, QTextEdit, QComboBox, QFileDialog,
@@ -8,7 +9,8 @@ from PySide6.QtCore import Signal, Slot
 class ControlPanelWidget(QWidget):
     """
     UIの右側（設定、接続、操作、ログ）を担当するウィジェット。
-    実際のロジックは持たず、MainWindow にシグナルを送信する。
+    (修正) MainWindowがQLineEdit等を直接操作できるよう、UIウィジェットを
+    クラスメンバ変数 (self.xxx) として保持するよう変更。
     """
     
     # --- MainWindow への通知シグナル ---
@@ -29,28 +31,41 @@ class ControlPanelWidget(QWidget):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         
-        # (UIの見た目)
         self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Expanding)
-        self.setMinimumWidth(400) # 幅を固定
+        self.setMinimumWidth(400)
         
         self.init_ui()
+        self.connect_signals()
+        self.set_ui_state_disconnected() # 初期状態
 
     def init_ui(self):
+        """ (修正) UIウィジェットを self.xxx として初期化 """
         layout = QVBoxLayout(self)
         
         # --- 1. 設定ファイル グループ ---
         config_group = QGroupBox("1. 設定ファイル")
         config_layout = QVBoxLayout()
         
-        self.layout_path_edit = self._create_file_input("基板位置 (JSON):")
-        self.map_path_edit = self._create_file_input("基板種類 (JSON):")
-        self.output_dir_edit = self._create_dir_input("画像保存先:")
-        self.csv_export_edit = self._create_dir_input("CSV保存先:", is_save=True)
+        (self.layout_path_layout, 
+         self.layout_path_edit, 
+         self.layout_path_btn) = self._create_file_input("基板位置 (JSON):")
+        
+        (self.map_path_layout, 
+         self.map_path_edit, 
+         self.map_path_btn) = self._create_file_input("基板種類 (JSON):")
+         
+        (self.output_dir_layout, 
+         self.output_dir_edit, 
+         self.output_dir_btn) = self._create_dir_input("画像保存先:")
+         
+        (self.csv_export_layout, 
+         self.csv_export_edit, 
+         self.csv_export_btn) = self._create_dir_input("CSV保存先:", is_save=True)
 
-        config_layout.addLayout(self.layout_path_edit)
-        config_layout.addLayout(self.map_path_edit)
-        config_layout.addLayout(self.output_dir_edit)
-        config_layout.addLayout(self.csv_export_edit)
+        config_layout.addLayout(self.layout_path_layout)
+        config_layout.addLayout(self.map_path_layout)
+        config_layout.addLayout(self.output_dir_layout)
+        config_layout.addLayout(self.csv_export_layout)
         config_group.setLayout(config_layout)
         layout.addWidget(config_group)
         
@@ -97,18 +112,23 @@ class ControlPanelWidget(QWidget):
         log_group.setLayout(log_layout)
         layout.addWidget(log_group)
 
-        layout.addStretch() # 上に詰める
+        layout.addStretch()
 
-        # --- シグナルを接続 ---
+    def connect_signals(self):
+        """ シグナルを接続 """
+        # ファイル参照ボタン
+        self.layout_path_btn.clicked.connect(lambda: self._browse_file(self.layout_path_edit))
+        self.map_path_btn.clicked.connect(lambda: self._browse_file(self.map_path_edit))
+        self.output_dir_btn.clicked.connect(lambda: self._browse_directory(self.output_dir_edit))
+        self.csv_export_btn.clicked.connect(lambda: self._browse_save_path(self.csv_export_edit, "CSV Files (*.csv)"))
+        
+        # メイン操作ボタン
         self.btn_refresh_ports.clicked.connect(self.refresh_ports_requested)
         self.btn_connect_stage.clicked.connect(self._on_connect_stage_clicked)
         self.btn_set_origin.clicked.connect(self.set_origin_requested)
         self.btn_start_workflow.clicked.connect(self._on_start_workflow_clicked)
         self.btn_stop_workflow.clicked.connect(self.stop_workflow_requested)
         self.btn_manual_capture.clicked.connect(self._on_manual_capture_clicked)
-        
-        # --- 初期状態 ---
-        self.set_ui_state_disconnected()
 
     # --- プライベート スロット (UI内部処理) ---
     
@@ -121,53 +141,52 @@ class ControlPanelWidget(QWidget):
 
     def _on_start_workflow_clicked(self):
         # 実行前にファイルパスが設定されているか確認
-        if not self.layout_path_edit.findChild(QLineEdit).text():
+        if not self.layout_path_edit.text():
             self.log_message("エラー: '基板位置' ファイルパスが未設定です。")
             return
-        if not self.map_path_edit.findChild(QLineEdit).text():
+        if not self.map_path_edit.text():
             self.log_message("エラー: '基板種類' ファイルパスが未設定です。")
             return
-        if not self.output_dir_edit.findChild(QLineEdit).text():
+        if not self.output_dir_edit.text():
             self.log_message("エラー: '画像保存先' が未設定です。")
             return
             
-        self.load_layout_requested.emit(self.layout_path_edit.findChild(QLineEdit).text())
-        self.load_map_requested.emit(self.map_path_edit.findChild(QLineEdit).text())
-        self.output_dir_requested.emit(self.output_dir_edit.findChild(QLineEdit).text())
+        # (修正) MainWindowにパスを渡すシグナルを送信
+        self.load_layout_requested.emit(self.layout_path_edit.text())
+        self.load_map_requested.emit(self.map_path_edit.text())
+        self.output_dir_requested.emit(self.output_dir_edit.text())
         
         self.start_workflow_requested.emit()
 
     def _on_manual_capture_clicked(self):
-        if not self.output_dir_edit.findChild(QLineEdit).text():
+        if not self.output_dir_edit.text():
             self.log_message("エラー: '画像保存先' が未設定です。")
             return
-        self.output_dir_requested.emit(self.output_dir_edit.findChild(QLineEdit).text())
+        # (修正) MainWindowにパスを渡すシグナルを送信
+        self.output_dir_requested.emit(self.output_dir_edit.text())
         self.manual_capture_requested.emit()
         
     # --- UIヘルパー (ファイル参照) ---
     
-    def _create_file_input(self, label_text: str) -> QHBoxLayout:
+    def _create_file_input(self, label_text: str) -> tuple[QHBoxLayout, QLineEdit, QPushButton]:
+        """ (修正) ウィジェットを返すように変更 """
         layout = QHBoxLayout()
         layout.addWidget(QLabel(label_text))
         line_edit = QLineEdit()
         layout.addWidget(line_edit)
         button = QPushButton("参照...")
-        button.clicked.connect(lambda: self._browse_file(line_edit))
         layout.addWidget(button)
-        return layout
+        return (layout, line_edit, button)
 
-    def _create_dir_input(self, label_text: str, is_save: bool = False) -> QHBoxLayout:
+    def _create_dir_input(self, label_text: str, is_save: bool = False) -> tuple[QHBoxLayout, QLineEdit, QPushButton]:
+        """ (修正) ウィジェットを返すように変更 """
         layout = QHBoxLayout()
         layout.addWidget(QLabel(label_text))
         line_edit = QLineEdit()
         layout.addWidget(line_edit)
         button = QPushButton("参照...")
-        if is_save:
-             button.clicked.connect(lambda: self._browse_save_path(line_edit, "CSV Files (*.csv)"))
-        else:
-             button.clicked.connect(lambda: self._browse_directory(line_edit))
         layout.addWidget(button)
-        return layout
+        return (layout, line_edit, button)
 
     def _browse_file(self, line_edit: QLineEdit):
         path, _ = QFileDialog.getOpenFileName(self, "ファイルを開く", "", "JSON Files (*.json);;All Files (*)")
