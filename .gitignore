@@ -1,0 +1,49 @@
+#Python Bytecode and Caches
+pycache/
+*.pyc
+*.pyo
+*.pyd
+
+#Python Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+#Python Build Artifacts
+build/
+dist/
+*.egg-info/
+*.egg
+pip-wheel-metadata/
+
+#IDEConfiguration 
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+#OS Generated Files
+.DS_Store
+Thumbs.db
+._*
+
+#Log Files
+*.log
+logs/
+
+#Test and Coverage Artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+pytest-report.html
+
+#Application Output (Generated Data)
+
+#ver1以降で自動生成される画像やCSVが保存されるディレクトリを想定
+output/
+results/
+captured_images/
+
+#.ui ファイルから自動生成される .py ファイル
+ui_*.py
