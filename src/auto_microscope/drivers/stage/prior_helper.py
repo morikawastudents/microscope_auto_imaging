@@ -7,8 +7,7 @@ from typing import Tuple # 型ヒント (Tuple) のためにインポート
 
 class PriorStageHelper:
     """
-    (修正) prior_interface.py のロジックに基づき、
-    コマンドの成否を 'ret' (戻り値) のみで判定するように修正。
+    (修正) X軸の座標系の反転を、このヘルパー層で吸収します。
     """
     
     def __init__(self, dll_path: str):
@@ -64,7 +63,6 @@ class PriorStageHelper:
             
             ret, response = self._send_command(f"controller.connect {com_port_number}")
             
-            # (修正) "OK" in response を削除。 ret == 0 のみで成否を判定
             if ret != 0:
                 print(f"ステージコントローラへの接続失敗 ({com_port_str}): {response} (戻り値: {ret})")
                 return False
@@ -83,7 +81,6 @@ class PriorStageHelper:
             os.chdir(original_cwd)
 
     def _send_command(self, command_str: str) -> Tuple[int, str]:
-        """ SDKにテキストコマンドを送信し、結果タプル (ret_code, response_str) を返す """
         if not self.sdk or self.sessionID < 0:
             return -1, "SDK not initialized"
             
@@ -112,22 +109,29 @@ class PriorStageHelper:
         self.sdk = None
 
     def set_origin_to_current(self) -> bool:
-        """ 現在位置を (0, 0) に設定する """
+        """ 
+        現在位置を (0, 0) に設定する
+        (X軸が反転していても、コントローラの内部座標 0 を設定する)
+        """
         ret, response = self._send_command("controller.stage.position.set 0 0")
-        # (修正) "OK" in response を削除
         return ret == 0
 
     def get_position(self) -> Tuple[float, float]:
-        """ 現在の位置 (x, y) を取得する (単位: microns) """
+        """ 
+        現在の位置 (x, y) を取得する (単位: microns) 
+        (修正: X軸の符号を反転させる)
+        """
         ret, response = self._send_command("controller.stage.position.get")
-        # (修正) "OK" in response を削除
         if ret == 0:
             try:
-                # 応答 "1234.0,5678.0" (prior_interface.py のログより) から数値を抽出
                 parts = response.split(',')
-                x_microns = float(parts[0]) # (修正) prior_interface.pyはOKを含まないので、0番目と1番目
-                y_microns = float(parts[1])
-                return x_microns, y_microns
+                x_controller = float(parts[0]) 
+                y_controller = float(parts[1])
+                
+                # (修正) コントローラのX座標を反転させて、実際の座標に合わせる
+                x_actual = -x_controller
+                
+                return x_actual, y_controller
             except (IndexError, ValueError) as e:
                 print(f"位置データのパース失敗: {response} ({e})")
                 return 0.0, 0.0
@@ -135,10 +139,17 @@ class PriorStageHelper:
         return 0.0, 0.0
 
     def move_to_position(self, x: float, y: float):
-        """ 指定された (x, y) 座標に移動する (単位: microns) """
-        ret, response = self._send_command(f"controller.stage.goto-position {x} {y}")
+        """ 
+        指定された (x, y) 座標に移動する (単位: microns) 
+        (修正: X軸の符号を反転させてコントローラに指示する)
+        """
         
-        # (修正) "OK" in response を削除
+        # (修正) 目的のX座標 (x) に移動するため、
+        # コントローラには反転したX座標 (-x) を指示する
+        x_controller = -x
+        
+        ret, response = self._send_command(f"controller.stage.goto-position {x_controller} {y}")
+        
         if ret != 0:
             print(f"移動開始エラー: {response} (戻り値: {ret})")
             return
@@ -148,11 +159,9 @@ class PriorStageHelper:
             time.sleep(0.1) 
             ret, busy_response = self._send_command("controller.stage.busy.get")
             
-            # (修正) "OK" in response を削除
             if ret == 0:
                 try:
-                    # 応答 "1" (Busy) または "0" (Ready) (prior_interface.py のログより)
-                    status = int(busy_response.split(',')[0]) # (修正) 0番目
+                    status = int(busy_response.split(',')[0]) 
                     if status == 0:
                         break 
                 except (IndexError, ValueError):
