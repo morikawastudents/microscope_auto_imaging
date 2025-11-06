@@ -48,3 +48,7 @@ class ConfigError(AutoMicroscopeError):
 
 class ValueError(AutoMicroscopeError):
     pass
+
+class ConfigError(AutoMicroscopeError):
+    # (更新) カスタム例外をインポート
+    pass
