@@ -3,14 +3,19 @@ import os
 import sys
 import time
 import re # COMポート名の数値抽出用にインポート
+from typing import Tuple # <--- ★ 1. これをインポートします
 
 class PriorStageHelper:
     """
     Prior Scientific SDK (DLL) の具体的な処理をカプセル化するヘルパークラス。
-    stage_controller.py はこのクラスのインターフェースのみを使用する。
+    prior_sdk.py (PriorSdkクラス) がこのクラスのインターフェースのみを使用する。
     """
     
+    # ... ( __init__ や initialize_stage などの他のコードは変更なし) ...
     def __init__(self, dll_path="/PriorSDK/PriorScientificSDK.dll"):
+        """
+        :param dll_path: "PriorScientificSDK.dll" への完全なパス
+        """
         self.sessionID = -1
         self.sdk = None
         self.rx = create_string_buffer(1000) # 受信バッファ
@@ -20,6 +25,7 @@ class PriorStageHelper:
     def initialize_stage(self, com_port_str: str) -> bool: # 引数を int から str (例: "COM3") に変更
         """ DLLをロードし、ステージコントローラーに接続する """
         try:
+            # (更新) 渡されたdll_pathをチェックする
             if not os.path.exists(self.dll_path):
                 print(f"エラー: DLLが見つかりません: {self.dll_path}")
                 return False
@@ -67,14 +73,14 @@ class PriorStageHelper:
             self._is_initialized = False
             return False
 
-    def _send_command(self, command_str: str) -> (int, str):
+    def _send_command(self, command_str: str) -> Tuple[int, str]: # <--- ★ 2. (int, str) を Tuple[int, str] に修正
         """ SDKにテキストコマンドを送信し、結果タプル (ret_code, response_str) を返す """
         if not self.sdk or self.sessionID < 0:
             return -1, "SDK not initialized"
             
         # print(f"[CMD] -> {command_str}") # デバッグ用
         
-        # バッファをクリア
+    # ... ( _send_command の残りの部分と、他のメソッドは変更なし) ...
         self.rx.value = b""
         
         # コマンドをバイト文字列にエンコードして送信
@@ -109,16 +115,17 @@ class PriorStageHelper:
         ret, response = self._send_command("controller.stage.position.set 0 0")
         return ret == 0
 
-    def get_position(self) -> (float, float):
+    def get_position(self) -> Tuple[float, float]:
         """ 現在の位置 (x, y) を取得する (単位: microns) """
         ret, response = self._send_command("controller.stage.position.get")
         if ret == 0 and "OK" in response:
             try:
                 # 応答 "OK,1234.0,5678.0" から数値を抽出
                 parts = response.split(',')
-                x = float(parts[1])
-                y = float(parts[2])
-                return x, y
+                # (更新) Prior SDK はマイクロメートル単位
+                x_microns = float(parts[1])
+                y_microns = float(parts[2])
+                return x_microns, y_microns
             except (IndexError, ValueError) as e:
                 print(f"位置データのパース失敗: {response} ({e})")
                 return 0.0, 0.0

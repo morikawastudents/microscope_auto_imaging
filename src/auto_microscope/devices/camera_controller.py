@@ -3,6 +3,7 @@ import os
 import sys
 import time
 import re # COMポート名の数値抽出用にインポート
+from typing import Tuple
 
 class PriorStageHelper:
     """
@@ -72,7 +73,7 @@ class PriorStageHelper:
             self._is_initialized = False
             return False
 
-    def _send_command(self, command_str: str) -> (int, str):
+    def _send_command(self, command_str: str) -> Tuple[int, str]:
         """ SDKにテキストコマンドを送信し、結果タプル (ret_code, response_str) を返す """
         if not self.sdk or self.sessionID < 0:
             return -1, "SDK not initialized"
@@ -114,7 +115,7 @@ class PriorStageHelper:
         ret, response = self._send_command("controller.stage.position.set 0 0")
         return ret == 0
 
-    def get_position(self) -> (float, float):
+    def get_position(self) -> Tuple[float, float]:
         """ 現在の位置 (x, y) を取得する (単位: microns) """
         ret, response = self._send_command("controller.stage.position.get")
         if ret == 0 and "OK" in response:
