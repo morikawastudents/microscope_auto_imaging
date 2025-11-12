@@ -6,14 +6,8 @@ from ..core.exceptions import CameraError, CameraConnectionError
 from ..devices.analysis.focus_analyzer import FocusAnalyzer
 
 class CameraControl:
-    """
-    アプリケーション側（GUIやWorkflow）へのカメラ機能の統一窓口（ファサード）。
-    """
-
-    def __init__(self, driver_type: str = "dummy"):
-        """
-        指定されたドライバタイプに基づいてカメラドライバを初期化します。
-        """
+    def __init__(self, driver_type: str = "dummy"): 
+        # ドライバの初期化
         print(f"[CameraControl] Initializing with driver: {driver_type}")
         self.driver: AbstractCamera | None = None
 
@@ -26,10 +20,10 @@ class CameraControl:
                 raise ValueError(f"不明なカメラドライバタイプです: {driver_type}")
 
         except (ValueError, ImportError) as e:
-            # プログラマの指定ミスや環境のセットアップミスはそのまま送出
+            # 既知の初期化エラーはそのまま伝播
             raise e
         except Exception as e:
-            # それ以外のSDK初期化時エラーは CameraConnectionError でラップ
+            # その他の例外はカメラ接続エラーとして扱う
             print(f"[CameraControl] ドライバ {driver_type} の初期化に失敗しました: {e}")
             raise CameraConnectionError(f"ドライバ {driver_type} の初期化に失敗: {e}")
 
@@ -37,6 +31,7 @@ class CameraControl:
              raise CameraError("ドライバのインスタンス化に失敗しました。")
 
     def connect(self) -> None:
+        # カメラへの接続
         if not self.driver:
             raise CameraError("ドライバが初期化されていません。")
         self.driver.connect()

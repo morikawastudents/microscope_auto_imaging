@@ -9,9 +9,7 @@ class StageControl:
     """
 
     def __init__(self, driver_type: str = "dummy", **kwargs):
-        """
-        指定されたドライバタイプに基づいてステージドライバを初期化します。
-        """
+        # ドライバの初期化
         print(f"[StageControl] Initializing with driver: {driver_type}")
         self.driver: AbstractStage | None = None
 

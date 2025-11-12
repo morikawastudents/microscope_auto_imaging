@@ -41,7 +41,7 @@ class DummyStage(AbstractStage):
         print("[DummyStage] Disconnected.")
 
     def move_abs(self, x: float, y: float) -> None:
-        """ (更新) ユーザー指定の座標 (原点基準) に移動 """
+        
         if not self._connected:
             raise StageConnectionError("Dummy stage is not connected.")
         

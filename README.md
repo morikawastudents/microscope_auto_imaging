@@ -143,3 +143,8 @@ ver2: devices/analysis/image_stability.py を実装し、imaging_workflow (QThre
 ver3: devices/analysis/pattern_recognition.py を実装。imaging_workflow が認識結果をCSVに含めます。GUI側で確認ダイアログ（QMessageBox やカスタム QDialog）を表示します。
 
 ver4: pattern_recognition に位置合わせロジックを追加し、imaging_workflow が複数の座標を計画的に撮影・結合（スティッチング）するように拡張します。
+
+
+プロジェクトの起動方法
+
+python -m auto_microscope.main

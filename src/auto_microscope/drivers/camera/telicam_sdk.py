@@ -4,15 +4,10 @@ import time
 from .abstract_camera import AbstractCamera
 from ...core.exceptions import CameraConnectionError, CameraError
 
-# (cv2 は画像保存 (imwrite) にのみ使われていたため、
-#  get_frame (ndarray) のみを返すこの層では不要になりました)
-
 class TeliCamSdk(AbstractCamera):
     """
     AbstractCameraインターフェースを実装した、
     東芝テリー (Teli) 製カメラ (pytelicam SDK) 用のラッパークラス。
-    
-    アップロードされた TeliCamHelper を AbstractCamera に適合させたものです。
     """
     def __init__(self, camera_index=0):
         self.camera_index = camera_index
@@ -127,10 +122,6 @@ class TeliCamSdk(AbstractCamera):
         """ (AbstractCamera) 露光時間を設定します (ミリ秒)。"""
         if not self._connected:
             raise CameraError("TeliCamに接続されていません。")
-        
-        # (注: 元のコードには露光設定がありませんでした)
-        # pytelicam SDKに露光時間設定の機能がある場合は、ここで実装します。
-        # 例: self.cam_device.set_parameter("ExposureTime", exposure_ms * 1000) # (SDKの仕様によります)
         print(f"[TeliCamSdk] (Warning) set_exposure({exposure_ms}ms) は実装されていません。")
         pass # 未実装
 
@@ -138,14 +129,9 @@ class TeliCamSdk(AbstractCamera):
         """ (AbstractCamera) 現在の露光時間 (ミリ秒) を取得します。"""
         if not self._connected:
             raise CameraError("TeliCamに接続されていません。")
-        
-        # (注: 元のコードには露光取得がありませんでした)
-        # 例: exposure_us = self.cam_device.get_parameter("ExposureTime")
-        #     return exposure_us / 1000.0
         print("[TeliCamSdk] (Warning) get_exposure() は実装されていません。ダミー値 10.0 を返します。")
         return 10.0 # ダミー値
 
     def is_connected(self) -> bool:
         """ (AbstractCamera) カメラが現在接続されているか確認します。"""
-        # (元の _is_initialized フラグを _connected にリネームしました)
         return self._connected
