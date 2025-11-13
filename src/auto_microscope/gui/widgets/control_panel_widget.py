@@ -39,7 +39,6 @@ class ControlPanelWidget(QWidget):
         self.set_ui_state_disconnected() # 初期状態
 
     def init_ui(self):
-        """ (修正) UIウィジェットを self.xxx として初期化 """
         layout = QVBoxLayout(self)
         
         # --- 1. 設定ファイル グループ ---
@@ -93,7 +92,7 @@ class ControlPanelWidget(QWidget):
         self.btn_set_origin = QPushButton("現在位置を原点に設定")
         self.btn_start_workflow = QPushButton("自動シーケンス開始")
         self.btn_stop_workflow = QPushButton("停止")
-        self.btn_manual_capture = QPushButton("手動撮影 (Ver1)")
+        self.btn_manual_capture = QPushButton("手動撮影")
         
         op_layout.addWidget(self.btn_set_origin)
         op_layout.addWidget(self.btn_start_workflow)
@@ -137,21 +136,22 @@ class ControlPanelWidget(QWidget):
         if com_port:
             self.connect_stage_requested.emit(com_port)
         else:
-            self.log_message("エラー: 有効なCOMポートが選択されていません。")
+            self.connect_stage_requested.emit(com_port)
+            # self.log_message.emit("エラー: 有効なCOMポートが選択されていません。")
 
     def _on_start_workflow_clicked(self):
         # 実行前にファイルパスが設定されているか確認
         if not self.layout_path_edit.text():
-            self.log_message("エラー: '基板位置' ファイルパスが未設定です。")
+            self.log_message.emit("エラー: '基板位置' ファイルパスが未設定です。")
             return
         if not self.map_path_edit.text():
-            self.log_message("エラー: '基板種類' ファイルパスが未設定です。")
+            self.log_message.emit("エラー: '基板種類' ファイルパスが未設定です。")
             return
         if not self.output_dir_edit.text():
-            self.log_message("エラー: '画像保存先' が未設定です。")
+            self.log_message.emit("エラー: '画像保存先' が未設定です。")
             return
             
-        # (修正) MainWindowにパスを渡すシグナルを送信
+        # MainWindowにパスを渡すシグナルを送信
         self.load_layout_requested.emit(self.layout_path_edit.text())
         self.load_map_requested.emit(self.map_path_edit.text())
         self.output_dir_requested.emit(self.output_dir_edit.text())
@@ -160,16 +160,16 @@ class ControlPanelWidget(QWidget):
 
     def _on_manual_capture_clicked(self):
         if not self.output_dir_edit.text():
-            self.log_message("エラー: '画像保存先' が未設定です。")
+            self.log_message.emit("エラー: '画像保存先' が未設定です。")
             return
-        # (修正) MainWindowにパスを渡すシグナルを送信
+        # MainWindowにパスを渡すシグナルを送信
         self.output_dir_requested.emit(self.output_dir_edit.text())
         self.manual_capture_requested.emit()
         
     # --- UIヘルパー (ファイル参照) ---
     
     def _create_file_input(self, label_text: str) -> tuple[QHBoxLayout, QLineEdit, QPushButton]:
-        """ (修正) ウィジェットを返すように変更 """
+        """ ウィジェットを返すように変更 """
         layout = QHBoxLayout()
         layout.addWidget(QLabel(label_text))
         line_edit = QLineEdit()
@@ -179,7 +179,7 @@ class ControlPanelWidget(QWidget):
         return (layout, line_edit, button)
 
     def _create_dir_input(self, label_text: str, is_save: bool = False) -> tuple[QHBoxLayout, QLineEdit, QPushButton]:
-        """ (修正) ウィジェットを返すように変更 """
+        """ ウィジェットを返すように変更 """
         layout = QHBoxLayout()
         layout.addWidget(QLabel(label_text))
         line_edit = QLineEdit()
@@ -207,7 +207,7 @@ class ControlPanelWidget(QWidget):
     
     @Slot(str)
     def log_message(self, message: str):
-        """ (スロット) MainWindow やスレッドからログメッセージを受け取る """
+        """ MainWindow やスレッドからログメッセージを受け取る """
         self.log_text_edit.append(message)
         print(message) # コンソールにも出力
 

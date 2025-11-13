@@ -22,7 +22,7 @@ except ImportError:
 
 class DummyCamera(AbstractCamera):
     # ダミーカメラドライバの実装
-    def __init__(self, resolution=(640, 480), image_filename="dummy_image.jpg"):
+    def __init__(self, resolution=(640, 480), image_filename="dummy_image.png"):
         self._resolution = resolution
         self._image_filename = image_filename # 読み込む画像ファイル名
         self._dummy_frame = None             # 読み込んだ画像を保持する変数
@@ -73,14 +73,7 @@ class DummyCamera(AbstractCamera):
         if not self._is_connected or self._dummy_frame is None:
             raise CameraConnectionError("[DummyCamera] カメラが接続されていないか、画像がロードされていません。")
 
-        # (変更) グラデーションの代わりに、ロードした画像のコピーを返す
         frame = self._dummy_frame.copy()
-        
-        # 画像左上に時刻（ミリ秒）を描画
-        timestamp = f"{time.time() * 1000:.0f}"
-        cv2.putText(frame, timestamp, (50, 50), # 座標を (50, 50) に変更
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-        
         return frame
 
     def set_exposure(self, exposure_ms: float) -> None:

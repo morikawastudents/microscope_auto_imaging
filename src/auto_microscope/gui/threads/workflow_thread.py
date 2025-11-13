@@ -4,74 +4,90 @@ from ...core.exceptions import AutoMicroscopeError
 
 class WorkflowThread(QThread):
     """
-    時間のかかる自動撮影シーケンスをバックグラウンドで実行するスレッド。
-    (ユーザーの AutomationWorker を QThread + ImagingWorkflow を使う形に修正)
+    (Ver2.2 修正)
+    単一ターゲットへの移動のみを担当するスレッド。
+    MainWindow の move_to_next_target() によって、ターゲット1つごとに
+    インスタンスが作成され、実行される。
     """
-    
+
     # --- シグナル定義 ---
     log_message = Signal(str)
-    workflow_finished = Signal()
     workflow_error = Signal(str)
     
-    # (Ver2以降)
-    # current_target_changed = Signal(dict)
+    # (Ver2.2 修正) v1 の workflow_finished は不要
+    # workflow_finished = Signal() 
     
+    # (Ver2.2 追加) 単一移動の完了を MainWindow に通知する
+    move_finished = Signal(dict) 
+
     def __init__(self, workflow: ImagingWorkflow, parent=None):
         super().__init__(parent)
-        self.workflow = workflow # MainWindow で初期化された実体
-        self._is_running = False
+        self.workflow = workflow
+        self._is_running = False # stop() のフラグ
+        self._target_to_move: dict | None = None # (v2.2 追加)
 
-    def run(self):
-        """ (QThread) スレッドのメインループ (シーケンス実行) """
+    @Slot(dict)
+    def move_to_target(self, target: dict):
+        """ 
+        (Ver2.2 追加) 
+        MainWindow から移動対象を受け取り、スレッドを開始 (run) するためのスロット 
+        """
         if not self.workflow or not self.workflow._is_initialized:
             self.workflow_error.emit("ワークフローが初期化されていません。")
             return
-            
-        self._is_running = True
         
-        try:
-            self.log_message("[WorkflowThread] 自動シーケンスを開始します...")
-            
-            targets = self.workflow.get_targets()
-            total = len(targets)
-            
-            # (Ver1) 原点設定はGUIスレッド (MainWindow) で実行済みと仮定
-            # self.workflow.set_stage_origin()
-            
-            for i, target in enumerate(targets):
-                if not self._is_running:
-                    self.log_message("[WorkflowThread] ユーザーによって中断されました。")
-                    break
-                
-                self.log_message("-" * 20)
-                self.log_message(f"[WorkflowThread] ターゲット {i+1}/{total} (ID: {target['id']}) へ移動します...")
-                
-                self.workflow.move_to_target(target)
-                
-                if not self._is_running: # 移動完了後に再度チェック
-                    break
-                
-                self.log_message(f"[WorkflowThread] ID {target['id']} (Type: {target['type']}) 移動完了。")
-                
-                # (Ver1) 移動のみ。撮影は手動。
-                # (Ver2) ここでピント合わせと自動撮影
-                
-                # (GUI更新のため少し待機)
-                self.msleep(100) 
+        self._target_to_move = target
+        self._is_running = True # 実行フラグを立てる
+        self.start() # run() を起動する
 
-            if self._is_running:
-                self.log_message("[WorkflowThread] 全てのターゲットへの移動が完了しました。")
+    def run(self):
+        """ 
+        (Ver2.2 修正) 
+        単一ターゲットへの移動処理のみを実行 
+        """
+        
+        # stop() が先に呼ばれた場合
+        if not self._is_running:
+            return 
             
-        except AutoMicroscopeError as e:
-            self.workflow_error.emit(f"ワークフローエラー: {e}")
+        if not self._target_to_move:
+            self.workflow_error.emit("WorkflowThread: 移動対象が設定されていません。")
+            return
+
+        target = self._target_to_move
+        try:
+            self.log_message.emit(f"[WorkflowThread] ターゲット ID: {target['id']} へ移動します...")
+            
+            # imaging_workflow の単一移動メソッドを呼び出す
+            self.workflow.move_to_target(target) 
+            
+            # stop() が移動中に呼ばれた場合
+            if not self._is_running: 
+                self.log_message.emit("[WorkflowThread] 移動中に停止要求を受けました。")
+                return
+
+            self.log_message.emit(f"[WorkflowThread] ID {target['id']} 移動完了。")
+            
+            # MainWindow に完了を通知
+            self.move_finished.emit(target) 
+
         except Exception as e:
-            self.workflow_error.emit(f"予期せぬワークフローエラー: {e}")
+            # エラーが発生した場合
+            self.workflow_error.emit(f"WorkflowThread エラー (ID: {target['id']}): {e}")
         finally:
-            self._is_running = False
-            self.workflow_finished.emit()
+            self._is_running = False # 処理終了
 
     @Slot()
     def stop(self):
-        """ (スロット) ワークフローを安全に停止する (次のターゲット移動前に) """
-        self.log_message("[WorkflowThread] 停止リクエストを受信しました。")
+        """ 
+        (Ver2.2) 
+        移動処理を中断させるためのフラグを立てる 
+        """
+        self.log_message.emit("[WorkflowThread] 停止リクエストを受信しました。")
         self._is_running = False
+        
+        # (オプション)
+        # もし StageControl に self.stage.stop_move() のような
+        # 緊急停止メソッドがあれば、ここで呼び出す
+        # if self.workflow and self.workflow.stage:
+        #     self.workflow.stage.stop_move()

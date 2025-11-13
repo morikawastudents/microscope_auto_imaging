@@ -8,7 +8,6 @@ class CameraThread(QThread):
     カメラ映像の取得とピント計算をバックグラウンドで行うスレッド。
     (ユーザーの CameraWorker を QThread + CameraControl を使う形に修正)
     """
-    
     # --- シグナル定義 ---
     # メインスレッド (MainWindow, CameraViewWidget) へ通知
     frame_ready = Signal(object) # QImage (object)
@@ -79,10 +78,8 @@ class CameraThread(QThread):
     def _perform_capture(self, frame, save_path):
         """ (内部) フレームをファイルに保存する """
         try:
-            # (注意) utils の cv2 を使用
             from ..utils import cv2
             cv2.imwrite(save_path, frame)
-            # (注) ここから log_message シグナルを送ることもできる
             print(f"[CameraThread] 手動撮影成功: {save_path}")
         except Exception as e:
             self.camera_error.emit(f"手動撮影失敗 ({save_path}): {e}")

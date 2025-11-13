@@ -4,11 +4,7 @@ from .abstract_stage import AbstractStage
 from ...core.exceptions import StageConnectionError
 
 class DummyStage(AbstractStage):
-    """
-    AbstractStageインターフェースを実装したダミーステージ。
-    (更新: アップロードされた DummyStageController の
-     原点オフセットロジックを採用し、より現実に近いシミュレーションを行います)
-    """
+
     def __init__(self):
         self._connected = False
         # (更新) _x, _y はステージの「内部」絶対座標とする
@@ -93,7 +89,6 @@ class DummyStage(AbstractStage):
         if not self._connected:
             raise StageConnectionError("Dummy stage is not connected.")
             
-        # (更新)
         self._origin_x = self._x
         self._origin_y = self._y
         print(f"[DummyStage] Setting current position as origin (0, 0).")

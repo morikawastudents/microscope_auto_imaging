@@ -68,13 +68,15 @@ class ImagingWorkflow:
         print(f"[Workflow] 原点設定完了。現在位置: {pos}")
 
     def get_targets(self) -> list[dict]:
-        """
-        読み込まれた撮影対象のリストを返す。
-        """
-        if not self.targets:
-            # まだロードされていない場合はロードを試みる (パスが ConfigManager にあれば)
-            # (GUI側でロードするので、通常はここを通らない)
-            raise AutoMicroscopeError("撮影対象リストがロードされていません。")
+        if not self.config.is_ready(): #
+            raise AutoMicroscopeError("設定ファイル（位置・種類）が読み込まれていません。")
+        
+        targets = self.config.get_target_positions() #
+        
+        if not targets:
+            raise AutoMicroscopeError("設定ファイルから撮影対象が見つかりませんでした。")
+        
+        self.targets = targets 
         return self.targets
 
     def move_to_target(self, target: dict):
