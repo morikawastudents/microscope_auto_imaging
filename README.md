@@ -1,150 +1,598 @@
-プロジェクト構成案: 自動顕微鏡システム (PySide6版)
+## 自動撮影ソフトウェア 概要
+基板の自動撮影ソフトウェアの設計ドキュメント。
+最初にソフトウェアの仕様、インストール手順、起動コマンドを示し、その後プロジェクト構成、各モジュールの役割、クラス一覧と継承関係を説明する。
 
-このドキュメントでは、PySide6をGUIフレームワークとして使用する場合のディレクトリ構成と各モジュールの役割について説明します。
+## 仕様 (自動走査とマップ表示まで実装)
+- **対応カメラ:** TeliCam (pytelicam SDK)
+- **対応ステージ:** Prior Scientific (Prior SDK)
 
-## 技術選定
+main.py から起動し、PySide6 GUIで操作する。生成されたGUIウィンドウ上には以下のコンポーネントが含まれる:
+  - カメラ映像表示エリア (CameraViewWidget)
+    - リアルタイム映像表示
+    - ピントスコア表示
+  - 基板マップ表示エリア (MapDisplayWidget)
+    - 基板位置・種類表示
+    - ステージ現在位置表示
+  - 操作パネル (ControlPanelWidget)
+    - ファイル選択、COMポート選択
+    - 接続、原点設定、自動撮影開始ボタン
+    - ログ表示エリア
+    - 手動撮影ボタン
 
-GUI (フロントエンド): PySide6
-
-Pythonで直接GUIを構築し、ハードウェア制御ロジックをシームレスに呼び出すモノリシックなデスクトップアプリケーション構成を採用します。
-
-ハードウェア/ロジック (バックエンド): Python
-
-OpenCV, リニアステージの制御ライブラリなど、Pythonモジュールとして実装します。
-
-## ディレクトリ構成 (トップレベル)
-
-APIサーバーが不要になるため、frontend/ ディレクトリは削除し、すべてのコードを src/ 配下に統合します。
-
-auto_microscope_system/
-├── .gitignore
-├── pyproject.toml         # Pythonプロジェクト設定、依存関係 (PySide6, OpenCVなど)
-├── README.md
-└── src/                   # Python ソースコード
-    └── auto_microscope/
+GUI上で基板位置の設定ファイル、基板種類の設定ファイルを指定し、ステージを接続、原点設定後、「自動撮影開始」ボタンでワークフローを実行する。撮影された画像は指定ディレクトリに保存される。ワークフローが実行されると、ステージは所定の基板位置に自動で移動し、写真撮影が実行され次第、次の位置へ移動する。撮影中はマップ表示エリアで現在のステージ位置が更新される。
 
 
-3. バックエンド・GUI (src/auto_microscope/) の詳細
+## インストール手順と起動コマンド
 
-GUIとロジックが統合されたディレクトリ構成です。
+**リポジトリのクローン**
+```bash
+git clone git@github.com:morikawastudents/microscope_auto_imaging.git
+```
 
-src/
-    └── auto_microscope/
-        ├── __init__.py
-        ├── main.py        # PySide6 アプリケーションのメインエントリポイント (QApplicationの起動)
-        ├── gui/           # PySide6 GUIコンポーネント (View)
-        │   ├── __init__.py
-        │   ├── main_window.py # メインウィンドウ (QMainWindow)
-        │   ├── video_widget.py  # カメラ映像とピントスコア表示 (QWidget)
-        │   ├── control_panel.py # 操作ボタン (QGroupBox or QWidget)
-        │   └── config_widget.py # 設定ファイルI/Oやパス設定用ウィジェット
-        │
-        ├── core/            # コアロジック, データモデル (Model)
-        │   ├── __init__.py
-        │   ├── config_loader.py # YAML/CSVの読み書きロジック
-        │   ├── exceptions.py  # カスタム例外 (例: StageConnectionError)
-        │   └── models.py      # Pydanticデータモデル (設定ファイル構造)
-        │
-        ├── devices/         # ハードウェア制御の抽象化レイヤー (Model/Interface)
-        │   ├── __init__.py
-        │   ├── camera_control.py  # カメラI/F (ピント計算含む) - アプリ側窓口
-        │   ├── stage_control.py   # ステージI/F - アプリ側窓口
-        │   └── analysis/        # (ver2以降) 画像解析
-        │       ├── __init__.py
-        │       ├── focus_analyzer.py # ピントスコア計算ロジック
-        │       └── pattern_recognition.py # (ver3-4) パターン認識, 位置合わせ
-        │
-        ├── drivers/         # SDK固有の実装 (Hardware Drivers)
-        │   ├── __init__.py
-        │   ├── camera/        # カメラドライバ パッケージ
-        │   │   ├── __init__.py
-        │   │   ├── abstract_camera.py # (必須) カメラ共通の抽象基底クラス
-        │   │   ├── dummy_camera.py    # ダミーカメラ実装
-        │   │   ├── maker_a_sdk.py     # メーカーAのSDKラッパー
-        │   │   ├── opencv_camera.py   # OpenCV (Webカメラ) 用ラッパー
-        │   │   ├── telicam_sdk.py   # TeliCam SDK ラッパー
-        │   │   └── sdk_files_a/       # メーカーAの構成ファイル (DLL, .iniなど)
-        │   │       ├── config.ini
-        │   │       └── ASdk.dll
-        │   │
-        │   ├── stage/         # ステージドライバ パッケージ
-        │   │   ├── __init__.py
-        │   │   ├── abstract_stage.py  # (必須) ステージ共通の抽象基dクラス
-        │   │   ├── dummy_stage.py     # ダミーステージ実装 (オフセットロジック)
-        │   │   ├── prior_sdk.py     # Prior SDK ラッパー (AbstractStageを実装)
-        │   │   ├── prior_helper.py  # (追加) Prior SDK (DLL) と通信するヘルパー
-        │   │   └── Prior_driver/    # (更新) Priorの構成ファイル (DLL)
-        │   │       └── PriorScientificSDK.dll
-        │   │
-        │
-        └── services/          # ビジネスロジック (Controller)
-            ├── __init__.py
-            ├── imaging_workflow.py # 自動撮影シーケンス管理 (QThread内で実行)
-            └── system_signals.py   # (旧status_manager) Qtシグナル(QObject)を定義 (状態更新、ログ表示用)
+**仮想環境の作成と有効化**
+```bash
+cd microscope_auto_imaging
+python -m venv venv
+# Windows
+venv\Scripts\activate
+# macOS/Linux 
+# source venv/bin/activate
+pip install -r requirements.txt
+```
+
+**カメラドライバのインストール**
+TeliCam SDK
+```bash
+cd microscope_auto_imaging
+pip install ./src/drivers/camera/lib/pytelicam-1.1.1-cp312-cp312-win_amd64.whl
+```
+
+**ステージドライバのインストール**
+Prior Scientific SDK
+
+./src/drivers/stage/Prior_driver/PriorScientificSDK.dll をコード内で直接参照するため、インストール不溶。
 
 
-
-4. モジュールの役割詳細
-
-src/auto_microscope/
-
-main.py: アプリケーションの起動点。QApplication を初期化し、gui/main_window.py の MainWindow を生成・表示します。
-
-gui/: GUI（ビュー）関連のモジュール。
-
-main_window.py: メインウィンドウ。video_widget や control_panel を配置します。ボタンのシグナル（クリック）を services のロジック（スロット）に接続する役割を持ちます。
-
-video_widget.py: カメラ映像を表示するウィジェット。devices/camera_control からの映像フレーム（QImage）をQtシグナル経由で受け取り描画します。ピントスコアも表示します。
-
-control_panel.py: 「原点設定」「実行開始」「手動撮影」などのボタンを配置します。
-
-config_widget.py: (ver1) config ウィンドウとして、各ディレクトリパスを設定ファイルダイアログ（QFileDialog）で設定するUIを提供します。
-
-core/: (変更なし) アプリケーション全体で使用する共通ロジック（設定ファイルI/O、データモデル）。
-
-devices/: ハードウェア制御の「抽象インターフェース」層（ファサード）。services 層や gui 層は、ハードウェアの具体的なメーカー（SDK）を知ることなく、この層のメソッド（例: move_abs(x, y)）だけを呼び出します。
-
-camera_control.py: アプリケーション側（GUIやWorkflow）への窓口。drivers/camera/ から設定に応じて具象クラス（MakerACamera や OpenCvCamera）をインポートし、そのインスタンスを内部で保持します。ピントスコア計算（OpenCV利用）もこの層で行います。
-
-stage_control.py: 同様に drivers/stage/ から具象クラスをインポートし、アプリケーション側に統一されたI/F（move_abs, set_origin等）を提供します。
-
-drivers/: (構成変更) SDKなど、特定のハードウェアに強く依存する「具象」コードを格納します。
-
-camera/ (新設パッケージ):
-
-maker_a_sdk.py: メーカー提供のSDKライブラリ（sdk_files_a/ 内のDLLなど）をインポートし、Pythonから扱えるようにラップするクラス。
-
-opencv_camera.py: WebカメラをOpenCV経由で操作するクラス。
-
-sdk_files_a/: SDKのDLL、設定ファイルなどを格納します。
-
-stage/ (新設パッケージ):
-
-maker_b_sdk.py: メーカーBのSDK（シリアル通信など）をラップするクラス。
-
-sdk_files_b/: SDKのDLL、設定ファイルなどを格納します。
-
-dummy_hardware.py: SDKが接続されていない状態でも開発・テストができるよう、統一I/Fを持つダミークラス。
-
-services/: GUIとデバイス（ハードウェア）を仲介するビジネスロジック（コントローラー）。
-
-imaging_workflow.py: 自動撮影シーケンスを実行します。devices/stage_control や devices/camera_control の抽象I/Fを呼び出してシーケンスを実行します。GUIのフリーズを防ぐため、必ず QThread の run() メソッド内で実行します。
-
-system_signals.py: QObject を継承したクラスを定義し、アプリケーション全体で使用するカスタムシグナル（例: stagePositionUpdated, focusScoreUpdated, logMessageGenerated）を定義します。
-
-5. 開発バージョン計画 (PySide6版)
-
-(変更なし)
-
-ver1: gui/ の基本コンポーネントと devices/ の制御クラスを実装します。control_panel のボタンクリック（シグナル）で devices/stage_control のメソッド（スロット）が直接呼ばれる形を実装します。config_widget でパスを設定し、手動撮影ボタンで imaging_workflow (ver1) がCSVをエクスポートするロジックを実装します。
-
-ver2: devices/analysis/image_stability.py を実装し、imaging_workflow (QThread) 内でピントスコアと安定性を監視し、自動で撮影（camera_control.capture()）をトリガーするように改良します。
-
-ver3: devices/analysis/pattern_recognition.py を実装。imaging_workflow が認識結果をCSVに含めます。GUI側で確認ダイアログ（QMessageBox やカスタム QDialog）を表示します。
-
-ver4: pattern_recognition に位置合わせロジックを追加し、imaging_workflow が複数の座標を計画的に撮影・結合（スティッチング）するように拡張します。
-
-
-プロジェクトの起動方法
-
+**起動コマンド:**
+```bash
 python -m auto_microscope.main
+```
+
+---
+
+## プロジェクト構成と各モジュールの役割
+
+### ディレクトリツリー
+
+```
+src/auto_microscope/
+├── __init__.py
+├── main.py                          # アプリケーション起動点
+├── core/                            # コア機能（例外、設定管理）
+│   ├── __init__.py
+│   ├── exceptions.py                # カスタム例外定義
+│   └── utils.py                     # 共通ユーティリティ
+├── devices/                         # ハードウェア制御のファサード層
+│   ├── __init__.py
+│   ├── camera_controller.py         # カメラ制御の統一I/F
+│   ├── stage_controller.py          # ステージ制御の統一I/F
+│   └── analysis/
+│       ├── __init__.py
+│       └── focus_analyzer.py        # ピントスコア計算
+├── drivers/                         # SDK固有の具体的な実装
+│   ├── __init__.py
+│   ├── camera/
+│   │   ├── __init__.py
+│   │   ├── abstract_camera.py       # カメラ抽象基底クラス
+│   │   ├── dummy_camera.py          # ダミーカメラ実装
+│   │   ├── telicam_sdk.py           # TeliCam SDK ラッパー
+│   │   └── lib/                     # SDKライブラリ
+│   │       └── pytelicam-1.1.1-...
+│   └── stage/
+│       ├── __init__.py
+│       ├── abstract_stage.py        # ステージ抽象基底クラス
+│       ├── dummy_stage.py           # ダミーステージ実装
+│       ├── prior_sdk.py             # Prior SDK ラッパー
+│       ├── prior_helper.py          # Prior SDK DLL通信ヘルパー
+│       └── Prior_driver/
+│           └── PriorScientificSDK.dll
+├── services/                        # ビジネスロジック層
+│   ├── __init__.py
+│   ├── imaging_workflow.py          # 撮影ワークフロー
+│   └── config_service.py            # 設定ファイル管理（ConfigManager）
+├── gui/                             # GUIコンポーネント（PySide6）
+│   ├── __init__.py
+│   ├── main_window.py               # メインウィンドウ
+│   ├── utils.py                     # GUI用ユーティリティ
+│   ├── widgets/
+│   │   ├── __init__.py
+│   │   ├── camera_view_widget.py    # カメラ映像表示
+│   │   ├── control_panel_widget.py  # 操作パネル
+│   │   └── map_display_widget.py    # 基板マップ表示
+│   └── threads/
+│       ├── __init__.py
+│       ├── camera_thread.py         # カメラスレッド
+│       └── workflow_thread.py       # ワークフロースレッド
+└── tests/                           # ユニットテスト
+    ├── devices/
+    ├── gui/
+    └── services/
+```
+
+---
+
+## クラス一覧と継承関係
+
+### 1. **抽象基底クラス (Abstract Base Classes)**
+
+#### AbstractCamera
+```python
+class AbstractCamera(ABC):
+    """全カメラ実装が従うべきインターフェース"""
+    
+    @abstractmethod
+    def connect(self) -> None: ...
+    @abstractmethod
+    def disconnect(self) -> None: ...
+    @abstractmethod
+    def get_frame(self) -> np.ndarray: ...
+    @abstractmethod
+    def set_exposure(self, exposure_ms: float) -> None: ...
+    @abstractmethod
+    def get_exposure(self) -> float: ...
+    @abstractmethod
+    def is_connected(self) -> bool: ...
+```
+
+**受け取る値:** なし（インターフェース定義のみ）  
+**継承元:** ABC  
+**役割:** カメラ実装の統一インターフェース定義
+
+---
+
+#### AbstractStage
+```python
+class AbstractStage(ABC):
+    """全ステージ実装が従うべきインターフェース（座標系: mm）"""
+    
+    @abstractmethod
+    def connect(self) -> None: ...
+    @abstractmethod
+    def disconnect(self) -> None: ...
+    @abstractmethod
+    def move_abs(self, x: float, y: float) -> None: ...
+    @abstractmethod
+    def move_rel(self, dx: float, dy: float) -> None: ...
+    @abstractmethod
+    def get_position(self) -> tuple[float, float]: ...
+    @abstractmethod
+    def set_origin(self) -> None: ...
+    @abstractmethod
+    def is_moving(self) -> bool: ...
+    @abstractmethod
+    def wait_for_move(self) -> None: ...
+    @abstractmethod
+    def is_connected(self) -> bool: ...
+```
+
+**受け取る値:** なし（インターフェース定義のみ）  
+**継承元:** ABC  
+**役割:** ステージ実装の統一インターフェース定義（座標単位: mm）
+
+---
+
+### 2. **ドライバ層（具体的な実装）**
+
+#### DummyCamera
+```python
+class DummyCamera(AbstractCamera):
+    """デバッグ・テスト用ダミーカメラ"""
+    
+    def __init__(self, resolution=(640, 480), image_filename="dummy_image.png")
+```
+
+**受け取る値:** 
+- resolution: タプル（幅, 高さ）
+- image_filename: 読み込む画像ファイル名
+
+**継承元:** AbstractCamera  
+**役割:** 
+- ファイルから画像を読み込んでフレームとして返す
+- 実カメラなしでGUIテスト可能
+
+---
+
+#### TeliCamSdk
+```python
+class TeliCamSdk(AbstractCamera):
+    """TeliCam SDK ラッパー（実カメラ制御）"""
+    
+    def __init__(self, camera_index=0)
+```
+
+**受け取る値:**
+- camera_index: カメラインデックス（デフォルト: 0）
+
+**継承元:** AbstractCamera  
+**役割:**
+- pytelicam SDK経由でTeliCamを制御
+- フレーム取得、露光時間設定
+
+---
+
+#### DummyStage
+```python
+class DummyStage(AbstractStage):
+    """デバッグ・テスト用ダミーステージ（オフセット座標系）"""
+    
+    def __init__(self)
+```
+
+**受け取る値:** なし  
+**継承元:** AbstractStage  
+**役割:**
+- メモリ内で仮想ステージの座標を保持
+- _origin_x, _origin_yでオフセット基準を管理
+- 実ステージなしでGUIテスト可能
+
+---
+
+#### PriorSdk
+```python
+class PriorSdk(AbstractStage):
+    """Prior Scientific ステージ SDK ラッパー（実ステージ制御）"""
+    
+    def __init__(self, com_port_str: str, dll_path: str = "PriorScientificSDK.dll")
+```
+
+**受け取る値:**
+- com_port_str: COMポート（例: "COM3"）
+- dll_path: DLLファイルパス
+
+**継承元:** AbstractStage  
+**役割:**
+- PriorStageHelper経由でSDK DLL通信
+- mm ↔ μm 単位変換を実装
+- X軸座標系反転に対応
+
+---
+
+#### PriorStageHelper
+```python
+class PriorStageHelper:
+    """Prior SDK DLL との低レベル通信ヘルパー"""
+    
+    def __init__(self, dll_path: str)
+```
+
+**受け取る値:**
+- dll_path: DLLファイルパス
+
+**継承元:** なし（ヘルパークラス）  
+**役割:**
+- ctypes.WinDLLでPriorSDKをロード
+- controller.connect, controller.move_abs コマンド送信
+- X軸座標系反転を内部で吸収
+
+---
+
+### 3. **デバイス制御層（ファサード）**
+
+#### CameraControl
+```python
+class CameraControl:
+    """カメラ制御の統一I/F（ファサード）"""
+    
+    def __init__(self, driver_type: str = "dummy", **kwargs)
+```
+
+**受け取る値:**
+- driver_type: "dummy" または "telicam"
+- **kwargs: ドライバ固有オプション
+
+**継承元:** なし（ファサード）  
+**役割:**
+- driver_typeに応じてDummyCameraまたはTeliCamSdkをインスタンス化
+- CameraControl.connect(), .get_frame()など統一I/Fを提供
+- GUI/ワークフローはドライバ詳細を知らない
+
+---
+
+#### StageControl
+```python
+class StageControl:
+    """ステージ制御の統一I/F（ファサード）"""
+    
+    def __init__(self, driver_type: str = "dummy", **kwargs)
+```
+
+**受け取る値:**
+- driver_type: "dummy" または "prior"
+- **kwargs: ドライバ固有オプション（例: com_port_str）
+
+**継承元:** なし（ファサード）  
+**役割:**
+- driver_typeに応じてDummyStageまたはPriorSdkをインスタンス化
+- StageControl.move_abs(), .get_position()など統一I/Fを提供
+
+---
+
+### 4. **分析層**
+
+#### FocusAnalyzer
+```python
+class FocusAnalyzer:
+    """画像フレームのピント評価"""
+    
+    @staticmethod
+    def calculate_laplacian_variance(frame: np.ndarray) -> float:
+        """ラプラシアン分散でピントスコア計算"""
+```
+
+**受け取る値:** 
+- frame: numpy配列（OpenCV画像）
+
+**継承元:** なし（ユーティリティクラス）  
+**役割:**
+- OpenCVのLaplacian関数でエッジ検出
+- 分散（ピントスコア）を計算・返却
+
+---
+
+### 5. **サービス層（ビジネスロジック）**
+
+#### ConfigManager
+```python
+class ConfigManager:
+    """基板位置・種類のJSONファイル I/O とCSVエクスポート"""
+    
+    def __init__(self)
+```
+
+**受け取る値:** なし  
+**継承元:** なし  
+**役割:**
+- layout_data: {"1": {"x": 10.0, "y": 5.0}, ...} を読み込み
+- map_data: {"1": "TypeA", "2": "TypeB", ...} を読み込み
+- get_target_positions(): 両データを統合してターゲットリスト返却
+- export_map_to_csv(): 基板種類マップをCSV出力
+
+---
+
+#### ImagingWorkflow
+```python
+class ImagingWorkflow:
+    """撮影ワークフロー管理（高レベル操作）"""
+    
+    def __init__(self, camera_driver: str, stage_driver: str, **stage_kwargs)
+```
+
+**受け取る値:**
+- camera_driver: "dummy" または "telicam"
+- stage_driver: "dummy" または "prior"
+- **stage_kwargs: ステージドライバへのオプション（例: com_port_str）
+
+**継承元:** なし  
+**役割:**
+- CameraControl, StageControl, ConfigManagerを保持
+- connect_stage(), set_stage_origin(), move_to_target(target)など高レベルメソッド提供
+- load_config(layout_path, map_path): 設定ファイル読み込み
+- get_targets(): 撮影ターゲットリスト取得
+
+---
+
+### 6. **GUI層（PySide6ウィジェット）**
+
+#### CameraViewWidget
+```python
+class CameraViewWidget(QWidget):
+    """カメラ映像リアルタイム表示"""
+```
+
+**受け取る値:** 
+- parent: 親ウィジェット
+
+**継承元:** QWidget（PySide6）  
+**役割:**
+- カメラスレッドからのQImage信号を受け取り表示
+- ピントスコア値をテキストで表示
+- スケーリング対応
+
+---
+
+#### ControlPanelWidget
+```python
+class ControlPanelWidget(QWidget):
+    """操作パネル（設定、接続、操作）"""
+    
+    # シグナル例：
+    load_layout_requested = Signal(str)
+    connect_stage_requested = Signal(str)
+    start_workflow_requested = Signal()
+```
+
+**受け取る値:** 
+- parent: 親ウィジェット
+
+**継承元:** QWidget（PySide6）  
+**役割:**
+- ファイルパス選択UI（基板位置JSON、基板種類JSON、出力ディレクトリ）
+- COMポート選択＆「接続」ボタン
+- 「原点設定」「自動撮影開始」「手動撮影」ボタン
+- ログメッセージ表示エリア
+- メインウィンドウへシグナル emission で要求を通知
+
+---
+
+#### MapDisplayWidget
+```python
+class MapDisplayWidget(QWidget):
+    """基板レイアウト・種類・ステージ位置の視覚表示"""
+    
+    @Slot(list)
+    def update_targets(self, targets: list[dict]): ...
+    
+    @Slot(float, float)
+    def update_stage_position(self, x_mm: float, y_mm: float): ...
+```
+
+**受け取る値:**
+- targets: ターゲット辞書リスト [{"id": "1", "type": "TypeA", "x": 10.0, "y": 5.0}, ...]
+- x_mm, y_mm: 現在ステージ位置（mm）
+
+**継承元:** QWidget（PySide6）  
+**役割:**
+- mm座標 → px座標に変換して描画
+- ターゲットを色分け表示（種別ごと）
+- 現在ステージ位置を十字マーカーで表示
+- ハイライト機能（撮影中のターゲットを強調）
+
+---
+
+#### MainWindow
+```python
+class MainWindow(QMainWindow):
+    """メインウィンドウ（全ウィジェット統合）"""
+    
+    USE_DUMMY_DEVICES = True  # ダミーモード切り替え
+    
+    def __init__(self)
+```
+
+**受け取る値:** なし  
+**継承元:** QMainWindow（PySide6）  
+**役割:**
+- CameraViewWidget, MapDisplayWidget, ControlPanelWidgetを配置
+- ウィジェット間のシグナル/スロット接続
+- ImagingWorkflowインスタンス管理
+- CameraThread, WorkflowThread管理
+- QSettingsでウィンドウ状態・ファイルパス保存
+- ステージ位置ポーリングタイマー（100ms間隔）
+
+---
+
+### 7. **スレッド層**
+
+#### CameraThread
+```python
+class CameraThread(QThread):
+    """カメラフレーム取得スレッド（GUIブロック回避）"""
+    
+    frame_ready = Signal(QImage)  # フレーム準備シグナル
+    focus_score_updated = Signal(float)  # ピントスコア更新シグナル
+```
+
+**受け取る値:**
+- camera: CameraControlインスタンス
+
+**継承元:** QThread（PySide6）  
+**役割:**
+- 別スレッドでカメラから連続フレーム取得
+- FocusAnalyzerでピントスコア計算
+- 計算結果をシグナル emission でGUIに通知（ブロッキング回避）
+
+---
+
+#### WorkflowThread
+```python
+class WorkflowThread(QThread):
+    """撮影ワークフロー実行スレッド（GUIブロック回避）"""
+    
+    target_image_captured = Signal(str, np.ndarray)  # 撮影完了シグナル
+    workflow_finished = Signal()
+    error_occurred = Signal(str)
+```
+
+**受け取る値:**
+- workflow: ImagingWorkflowインスタンス
+
+**継承元:** QThread（PySide6）  
+**役割:**
+- 別スレッドでImagingWorkflowメソッド実行
+- ステージ移動、撮影を順序実行
+- 進捗をシグナル emission でGUIに通知
+
+---
+
+---
+
+## データフロー例：「自動撮影開始」の流れ
+
+```
+[GUI] ControlPanelWidget
+  ↓ (ボタンクリック)
+  → start_workflow_requested シグナル emission
+    ↓
+[GUI] MainWindow.on_start_workflow()
+  ↓ (WorkflowThreadを起動)
+  → WorkflowThread.run()
+    ↓
+[Logic] ImagingWorkflow.run()
+  ├→ ConfigManager.get_target_positions() → ターゲット取得
+  ├→ StageControl.move_abs(target_x, target_y) → 移動
+  ├→ CameraControl.get_frame() → 撮影
+  ├→ FocusAnalyzer.calculate_laplacian_variance() → ピント評価
+  └→ ファイル保存
+    ↓
+[Thread] target_image_captured シグナル → MainWindow
+  ↓
+[GUI] MapDisplayWidget.highlight_target() → マップ更新
+[GUI] CameraViewWidget 映像更新
+```
+
+---
+
+## 設定ファイル例
+
+### data/substrate_layout.json （基板位置）
+```json
+{
+  "1": {"x": 0.0, "y": 0.0},
+  "2": {"x": 17.5, "y": 0.0},
+  "3": {"x": 35.0, "y": 0.0}
+}
+```
+
+### data/substrate_map.json （基板種類）
+```json
+{
+  "1": "TypeA",
+  "2": "TypeB",
+  "3": "TypeA"
+}
+```
+
+---
+
+## 例外定義 (core/exceptions.py)
+
+```python
+class AutoMicroscopeError(Exception): ...
+class CameraError(AutoMicroscopeError): ...
+class CameraConnectionError(CameraError): ...
+class StageError(AutoMicroscopeError): ...
+class StageConnectionError(StageError): ...
+class ConfigError(AutoMicroscopeError): ...
+```
+
+---
+
+## テストスクリプト
+
+- manual_test_camera.py: TeliCam実機テスト
+- manual_test_stage.py: Prior実機テスト  
+- manual_test_workflow.py: 統合ワークフローテスト
+- tests/: ユニットテスト（pytest）
+
+---
+
+## 開発バージョン計画
+
+| Ver | 機能 | 実装状況 |
+|-----|------|--------|
+| 1.0 | 基本UI、ダミーデバイス | ✅ |
+| 2.0 | 実デバイス接続、リアルタイム表示 | ✅ |
+| 2.1 | マップ表示、ステージ位置同期 | ✅ |
+| 2.2 | 自動ワークフロー、CSV出力 | 進行中 |
+| 3.0 | 画像安定性監視、自動撮影トリガー | 計画中 |
+| 4.0 | パターン認識、位置合わせ | 計画中 |
